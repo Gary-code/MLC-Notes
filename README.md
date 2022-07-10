@@ -76,3 +76,96 @@ AI时代，机器学习编译归根结底就是==**部署问题**==
 
 ![image-20220706142240051](https://s2.loli.net/2022/07/06/fOL9AhrB1UbvxgD.png)
 
+### 2.2 张量程序抽象
+
+我们称这类抽象为 ``张量程序抽象’’。张量程序抽象的一个重要性质是，他们能够被一系列有效的程序变换所改变。![image-20220710210800366](https://s2.loli.net/2022/07/10/hx7lqZtsKcoQjMv.png)
+
+
+
+### 2.3 代码示例
+
+[代码](./chap2 notebooks/tensor_program_abstraction_ex.ipynb)
+
+
+
+## 03 张量程序实践
+
+使用张量程序抽象的主要目的是表示循环和相关的硬件加速选择，如多线程、特殊硬件指令的使用和内存访问。机器学习编译核心就是张量程序的变换，这个小节来探讨一下**元张量程序变换**的示例
+
+为了帮助我们更好地解释，我们用下面的张量计算作为示例。具体地，对于两个大小为 $128 \times 128$ 的矩阵 A 和 B，我们进行如下两步的张量计算。
+
+* $Y_{i, j} = \sum*_k A_*{i, k} \times B_{k, j}$
+
+*  $C*_{i, j} = \mathbb{relu}(Y_*{i, j}) = \mathbb{max}(Y_{i, j}, 0)$
+
+上面的计算很像在我们神经网络中经常看到的典型的元张量函数：一个线性层与一个 ReLU 激活层。首先，我们使用如下 NumPy 中的数组计算实现这两个操作。
+
+```python
+dtype = "float32"
+a_np = np.random.rand(128, 128).astype(dtype)
+b_np = np.random.rand(128, 128).astype(dtype)
+# a @ b is equivalent to np.matmul(a, b)
+c_mm_relu = np.maximum(a_np @ b_np, 0)
+```
+
+我们使用python，进行更加底层的实现，给出一些约定：
+
+*  我们将在必要时使用循环计算。
+
+* 如果可能，我们总是通过 `numpy.empty` 显式地分配数组并传递它们。
+
+下面是其中的一种实现方式👇：
+
+```python
+def lnumpy_mm_relu(A: np.ndarray, B: np.ndarray, C: np.ndarray):
+    Y = np.empty((128, 128), dtype="float32")
+    for i in range(128):
+        for j in range(128):
+            for k in range(128):
+                if k == 0:
+                    Y[i, j] = 0
+                Y[i, j] = Y[i, j] + A[i, k] * B[k, j]
+    for i in range(128):
+        for j in range(128):
+            C[i, j] = max(Y[i, j], 0)
+```
+
+> 下面检验一下实现是否等价
+
+```python
+c_np = np.empty((128, 128), dtype=dtype)
+lnumpy_mm_relu(a_np, b_np, c_np)
+np.testing.assert_allclose(c_mm_relu, c_np, rtol=1e-5)
+```
+
+### 3.1 TVMScript的实现
+
+在看过低级 NumPy 示例后，现在我们准备介绍 TensorIR。
+
+下面的代码块展示了 `mm_relu` 的 TensorIR 实现。这里的代码是用一种名为 **TVMScript** 的语言实现的，它是一种嵌入在 Python AST 中的特定领域方言。
+
+```python
+@tvm.script.ir_module
+class MyModule:
+    @T.prim_func
+    def mm_relu(A: T.Buffer[(128, 128), "float32"],
+                B: T.Buffer[(128, 128), "float32"],
+                C: T.Buffer[(128, 128), "float32"]):
+        T.func_attr({"global_symbol": "mm_relu", "tir.noalias": True})
+        Y = T.alloc_buffer((128, 128), dtype="float32")
+        for i, j, k in T.grid(128, 128, 128):
+            with T.block("Y"):
+                vi = T.axis.spatial(128, i)
+                vj = T.axis.spatial(128, j)
+                vk = T.axis.reduce(128, k)
+                with T.init():
+                    Y[vi, vj] = T.float32(0)
+                Y[vi, vj] = Y[vi, vj] + A[vi, vk] * B[vk, vj]
+        for i, j in T.grid(128, 128):
+            with T.block("C"):
+                vi = T.axis.spatial(128, i)
+                vj = T.axis.spatial(128, j)
+                C[vi, vj] = T.max(Y[vi, vj], T.float32(0))
+```
+
+* T.Buffer: 底层的抽象，保存一些数据（与函数的形参一一对应）
