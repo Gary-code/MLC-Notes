@@ -169,3 +169,75 @@ class MyModule:
 ```
 
 * T.Buffer: 底层的抽象，保存一些数据（与函数的形参一一对应）
+* T.grid将深层的循环♻️对应在一起
+
+实际上语句也是一一对应关系，如下图所示：
+
+![](https://mlc.ai/zh/_images/tensor_func_and_numpy.png)
+
+* 唯一**不同**的地方就在于：（这个是tensorIR的特殊构造）
+
+```python
+with T.block("Y"):
+  vi = T.axis.spatial(128, i)
+  vj = T.axis.spatial(128, j)
+  vk = T.axis.reduce(128, k)
+```
+
+* **块** 是 TensorIR 中的基本计算单位。值得注意的是，该块包含比普通 NumPy 代码更多的信息。一个块包含一组块轴（`vi、vj、vk`）和围绕它们定义的计算。
+* `vi,vj`所在矩阵`T`的最后维度中，就是spacial axis。并且与位置无关可以先算`Y[0, 1]`也可以先算`Y[5, 2]`
+* `vk`所在矩阵`T`中维度是消失的，需要在循环里面全部都跑一遍。
+* 并且绑定的循环迭代器都是0～127的
+* `"tir.noalias": True` 对应不同的内存指针
+* `@T.prim_func` 表示元张量函数
+
+```python
+Y[0, 1] 条件下跑k的循环[0～127]
+```
+
+* 上面的三行声明了关于块轴的**关键性质**，语法如下。
+
+```python
+[block_axis] = T.axis.[axis_type]([axis_range], [mapped_value])
+```
+
+这三行包含以下信息：
+
+- 定义了 `vi`、`vj`、`vk` 应被绑定到的位置（在本例中为 `i`、`j` 和 `k`）；
+- 声明了 `vi`、`vj`、`vk` 的原始范围（`T.axis.spatial(128, i)` 中的 `128`）；
+- 声明了块轴的属性（`spatial`, `reduce`）。
+
+但一般为了简单起见，我们会写成：
+
+```python
+vi, vj, vk = T.axis.remap("SSR", [i, j, k])
+```
+
+```python
+@tvm.script.ir_module
+class MyModule:
+    @T.prim_func
+    def mm_relu(A: T.Buffer[(128, 128), "float32"],
+                B: T.Buffer[(128, 128), "float32"],
+                C: T.Buffer[(128, 128), "float32"]):
+        T.func_attr({"global_symbol": "mm_relu", "tir.noalias": True})
+        Y = T.alloc_buffer((128, 128), dtype="float32")
+        for i, j, k in T.grid(128, 128, 128):
+            with T.block("Y"):
+                vi, vj, vk = T.axis.remap("SSR", [i, j, k])
+                with T.init():
+                    Y[vi, vj] = T.float32(0)
+                Y[vi, vj] = Y[vi, vj] + A[vi, vk] * B[vk, vj]
+        for i, j in T.grid(128, 128):
+            with T.block("C"):
+                vi = T.axis.spatial(128, i)
+                vj = T.axis.spatial(128, j)
+                C[vi, vj] = T.max(Y[vi, vj], T.float32(0))
+```
+
+同时，`IR Module`当中还可以包括**多个元张量函数**!
+
+### 3.2 函数参数与缓冲区
+
+
+
