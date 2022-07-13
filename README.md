@@ -237,7 +237,13 @@ class MyModule:
 
 同时，`IR Module`当中还可以包括**多个元张量函数**!
 
-### 3.2 函数参数与缓冲区
+### 3.2 张量程序TVM实践
+
+> [Notebook](./chap2 notebooks/tensor_it_ex.ipynb)
+
+
+
+
 
 
 
