@@ -84,7 +84,7 @@ AI时代，机器学习编译归根结底就是==**部署问题**==
 
 ### 2.3 代码示例
 
-[代码](./chap2 notebooks/tensor_program_abstraction_ex.ipynb)
+[代码](./Lesson 2-3 notebooks/tensor_program_abstraction_ex.ipynb)
 
 
 
@@ -239,9 +239,13 @@ class MyModule:
 
 ### 3.2 张量程序TVM实践
 
-> [Notebook](./chap2 notebooks/tensor_it_ex.ipynb)
+> [Notebook](./Lesson 2-3 notebooks/tensor_it_ex.ipynb)
 
 
+
+## 4 端到端模型整合
+
+> [Notebook](./Lesson 4 notebooks/end_to_end_model.ipynb)
 
 
 
