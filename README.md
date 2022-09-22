@@ -259,3 +259,11 @@ class MyModule:
 到目前为止，我们已经介绍了一些转换端到端 IRModule 的方法（例如参数绑定）。 让我们回到 MLC 的共同主题：MLC 过程是在不同的抽象表示之间执行并在它们之间进行转换。
 
 ![image-20220922214505040](https://raw.githubusercontent.com/Gary-code/pic/main/img/image-20220922214505040.png)
+
+### 总结
+
+- 计算图抽象有助于将元张量函数拼接在一起以进行端到端执行。
+- Relax 抽象的关键要素包括
+  - `call_tir`构造，将目标传递规范的元函数嵌入到计算图中
+  - `Dataflow block`
+- 计算图允许调用环境库函数和 `TensorIR` 函数。
